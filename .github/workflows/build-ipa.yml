@@ -1,0 +1,86 @@
+name: Build iOS IPA (Sideload & TrollStore)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+
+jobs:
+  build-ipa:
+    name: Build iOS IPA
+    runs-on: macos-14
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install npm dependencies
+        run: npm ci || npm install --legacy-peer-deps
+
+      - name: Setup CocoaPods
+        run: |
+          pod --version
+
+      - name: Expo Prebuild (Generate iOS Native Project)
+        run: |
+          npx expo prebuild --platform ios --clean
+
+      - name: Install Pods
+        run: |
+          cd ios
+          pod install
+          cd ..
+
+      - name: Build iOS Application (.app)
+        run: |
+          WORKSPACE=$(find ios -maxdepth 1 -name "*.xcworkspace" | head -n 1)
+          echo "Found workspace: $WORKSPACE"
+          
+          SCHEME=$(xcodebuild -workspace "$WORKSPACE" -list -json | jq -r '.workspace.schemes[0]')
+          echo "Using scheme: $SCHEME"
+
+          xcodebuild build \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            PROVISIONING_PROFILE="" \
+            COMPILER_INDEX_STORE_ENABLE=NO
+
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          APP_DIR=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n 1)
+          
+          if [ -z "$APP_DIR" ]; then
+            echo "Error: .app file not found!"
+            exit 1
+          fi
+          
+          echo "Packaging $APP_DIR into IPA..."
+          cp -r "$APP_DIR" Payload/
+          zip -qr ZenFlowTracker.ipa Payload
+          echo "IPA packaging completed: $(ls -lh ZenFlowTracker.ipa)"
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZenFlowTracker-IPA
+          path: ZenFlowTracker.ipa
+          retention-days: 30
