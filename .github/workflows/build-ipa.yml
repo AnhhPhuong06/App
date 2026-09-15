@@ -15,6 +15,8 @@ jobs:
     name: Build iOS IPA
     runs-on: macos-14
     timeout-minutes: 60
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -46,7 +48,7 @@ jobs:
       - name: Install Pods
         run: |
           cd ios
-          pod install --repo-update
+          pod install --repo-update 2>&1 | tee ../pod-install.log
           cd ..
 
       - name: Build iOS Application (.app)
@@ -91,12 +93,12 @@ jobs:
           path: ZenFlowTracker.ipa
           retention-days: 30
 
-      - name: Upload Logs on Failure
+      - name: Push Debug Logs to branch on Failure
         if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: failure-logs
-          path: |
-            ios/Podfile
-            ios/Podfile.lock
-          if-no-files-found: ignore
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B debug-logs
+          git add -f pod-install.log ios/Podfile || true
+          git commit -m "debug: add failure logs" || true
+          git push -f origin debug-logs || true
