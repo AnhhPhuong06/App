@@ -26,21 +26,27 @@ jobs:
           node-version: 20
           cache: 'npm'
 
+      - name: Setup Ruby and CocoaPods
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+
+      - name: Install CocoaPods
+        run: |
+          gem install cocoapods
+          pod --version
+
       - name: Install npm dependencies
         run: npm ci || npm install --legacy-peer-deps
 
-      - name: Setup CocoaPods
-        run: |
-          pod --version
-
       - name: Expo Prebuild (Generate iOS Native Project)
         run: |
-          npx expo prebuild --platform ios --clean
+          npx expo prebuild --platform ios --clean --no-install
 
       - name: Install Pods
         run: |
           cd ios
-          pod install
+          pod install --repo-update
           cd ..
 
       - name: Build iOS Application (.app)
@@ -84,3 +90,13 @@ jobs:
           name: ZenFlowTracker-IPA
           path: ZenFlowTracker.ipa
           retention-days: 30
+
+      - name: Upload Logs on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-logs
+          path: |
+            ios/Podfile
+            ios/Podfile.lock
+          if-no-files-found: ignore
